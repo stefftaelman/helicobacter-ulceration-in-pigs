@@ -60,7 +60,7 @@ sensitivity <- sensemakr::sensemakr(
     model = m_fhs_sha,
     treatment = "fundus_hs",
     benchmark_covariates = "stable21",
-    kd = c(5, 10)
+    kd = c(8, 8.5, 9)
 )
 
 png(
@@ -68,6 +68,7 @@ png(
   width=800, height=800, res=150
   )
 plot(sensitivity)
+
 dev.off()
 
 # association between hs in the pylorus and shannon diversity
@@ -82,7 +83,7 @@ sensitivity <- sensemakr::sensemakr(
     model = m_phs_sha,
     treatment = "pylorus_hs",
     benchmark_covariates = "stable21",
-    kd = c(5, 10)
+    kd = c(35, 40, 45)
 )
 
 png(
