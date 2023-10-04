@@ -1,6 +1,7 @@
 library(dplyr)
 library(sl3)
 library(medoutcon)
+set.seed(42)
 
 COLOR_SCHEME <- c(
   "#00A98F",
@@ -88,9 +89,9 @@ y <- alpha_diversity$ulcer_binary
 m <- alpha_diversity$Shannon
 
 tmle_dne_pgz <- medoutcon(
-  W = w, A = a, Z = NULL, M = m, Y = y, 
-  effect = "direct", 
-  estimator = "tmle", 
+  W = w, A = a, Z = NULL, M = m, Y = y,
+  effect = "direct",
+  estimator = "tmle",
   g_learners = sl_bin,
   h_learners = sl_bin,
   b_learners = sl_bin
@@ -98,9 +99,9 @@ tmle_dne_pgz <- medoutcon(
 tmle_dne_pgz
 
 tmle_ine_pgz <- medoutcon(
-  W = w, A = a, Z = NULL, M = m, Y = y, 
-  effect = "indirect", 
-  estimator = "tmle", 
+  W = w, A = a, Z = NULL, M = m, Y = y,
+  effect = "indirect",
+  estimator = "tmle",
   g_learners = sl_bin,
   h_learners = sl_bin,
   b_learners = sl_bin
@@ -118,19 +119,20 @@ y <- alpha_diversity$ulcer_binary
 m <- alpha_diversity$Shannon
 
 tmle_dne_fgz <- medoutcon(
-  W = w, A = a, Z = NULL, M = m, Y = y, 
-  effect = "direct", 
-  estimator = "tmle", 
+  W = w, A = a, Z = NULL, M = m, Y = y,
+  effect = "direct",
+  estimator = "tmle",
   g_learners = sl_bin,
   h_learners = sl_bin,
   b_learners = sl_bin
   )
 tmle_dne_fgz
 
+
 tmle_ine_fgz <- medoutcon(
-  W = w, A = a, Z = NULL, M = m, Y = y, 
-  effect = "indirect", 
-  estimator = "tmle", 
+  W = w, A = a, Z = NULL, M = m, Y = y,
+  effect = "indirect",
+  estimator = "tmle",
   g_learners = sl_bin,
   h_learners = sl_bin,
   b_learners = sl_bin

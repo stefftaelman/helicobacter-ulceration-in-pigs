@@ -1,6 +1,7 @@
 library(dplyr)
 library(sl3)
 library(medoutcon)
+set.seed(42)
 
 COLOR_SCHEME <- c(
   "#00A98F",
@@ -45,7 +46,7 @@ diminished_taxa_IDs <- row.names(taxonomy[taxonomy[, ncol(taxonomy)] %in% dimini
 
 key_taxa_counts <- t(raw_counts[key_taxa_IDs, ])
 
-## extract key species diversities
+## extract key species
 metadata <- merge(x=metadata, y=key_taxa_counts, by="row.names")
 metadata <- metadata %>%
     dplyr::mutate(
@@ -96,9 +97,9 @@ y <- metadata$ulcer_binary
 m <- metadata[, enriched_taxa_IDs]
 
 tmle_dne_pgz <- medoutcon(
-  W = w, A = a, Z = NULL, M = m, Y = y, 
-  effect = "direct", 
-  estimator = "tmle", 
+  W = w, A = a, Z = NULL, M = m, Y = y,
+  effect = "direct",
+  estimator = "tmle",
   g_learners = sl_bin,
   h_learners = sl_bin,
   b_learners = sl_bin
@@ -106,9 +107,9 @@ tmle_dne_pgz <- medoutcon(
 tmle_dne_pgz
 
 tmle_ine_pgz <- medoutcon(
-  W = w, A = a, Z = NULL, M = m, Y = y, 
-  effect = "indirect", 
-  estimator = "tmle", 
+  W = w, A = a, Z = NULL, M = m, Y = y,
+  effect = "indirect",
+  estimator = "tmle",
   g_learners = sl_bin,
   h_learners = sl_bin,
   b_learners = sl_bin
@@ -154,7 +155,7 @@ w <- cbind(
   )
 a <- metadata$pylorus_hs
 y <- metadata$ulcer_binary
-m <- metadata[, dimished_taxa_IDs]
+m <- metadata[, diminished_taxa_IDs]
 
 tmle_dne_pgz <- medoutcon(
   W = w, A = a, Z = NULL, M = m, Y = y, 
