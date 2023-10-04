@@ -44,11 +44,11 @@ m_diet_ulcer <- MASS::polr(factor(metadata$ulcer_score) ~ pellet_feed, method="l
 summary(m_diet_ulcer)
 
 ## association between diet and abundance of hs in the fundus
-m_diet_hs_fgz <- glm(metadata$HS_FGZ_QPCR ~ pellet_feed, family="gaussian")
+m_diet_hs_fgz <- glm(metadata$HS_FGZ_QPCR ~ factor(metadata$stable), family="gaussian")
 summary(m_diet_hs_fgz)
 
 ## association between diet and abundance of hs in the pylorus
-m_diet_hs_pgz <- glm(metadata$HS_PGZ_QPCR ~ pellet_feed, family="gaussian")
+m_diet_hs_pgz <- glm(metadata$HS_PGZ_QPCR ~ factor(metadata$stable), family="gaussian")
 summary(m_diet_hs_pgz)
 
 ## association between hs and fundus fg
@@ -135,6 +135,8 @@ summary(m_div_hs)
 
 m_div_hs_bin <- glm(alpha_diversity$Shannon ~ ifelse(alpha_diversity$HS_FGZ_QPCR > 0, 1, 0) + factor(alpha_diversity$stable), family="gaussian")
 summary(m_div_hs_bin)
+confint(m_div_hs_bin)
 
-m_div_hs_bin <- glm(metadalpha_diversityata$Shannon ~ ifelse(alpha_diversity$HS_PGZ_QPCR > 0, 1, 0) + factor(alpha_diversity$stable), family="gaussian")
+m_div_hs_bin <- glm(alpha_diversity$Shannon ~ ifelse(alpha_diversity$HS_PGZ_QPCR > 0, 1, 0) + factor(alpha_diversity$stable), family="gaussian")
 summary(m_div_hs_bin)
+confint(m_div_hs_bin)
