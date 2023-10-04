@@ -1,4 +1,5 @@
 library(dplyr)
+set.seed(42)
 
 COLOR_SCHEME <- c(
   "#00A98F",
@@ -243,22 +244,22 @@ da_results_score_fgz$output$names <- TreeSummarizedExperiment::convertNode(
   )
 
 
-### permutation-based FDR estimation
-fdr_thresh_score_fgz <- permFDP::permFDP.adjust.threshold(
-  pVals = da_results_score_fgz$output$PValue,
-  threshold = 0.05,
-  myDesign = ifelse(metadata[colnames(raw_counts), "ulcer_score"] == 2, 1, 2),
-  intOnly = raw_counts[da_results_score_fgz$output$names, ],
-  nPerms = 999
-)
-da_results_score_fgz$output$passes_permFDP <- da_results_score_fgz$output$PValue <= fdr_thresh_score_fgz
+### permutation-based FDR estimation (should be same as PGZ)
+# fdr_thresh_score_fgz <- permFDP::permFDP.adjust.threshold(
+#   pVals = da_results_score_fgz$output$PValue,
+#   threshold = 0.05,
+#   myDesign = ifelse(metadata[colnames(raw_counts), "ulcer_score"] == 2, 1, 2),
+#   intOnly = raw_counts[da_results_score_fgz$output$names, ],
+#   nPerms = 999
+# )
+da_results_score_fgz$output$passes_permFDP <- da_results_score_fgz$output$PValue <= fdr_thresh_score_pgz
 write.csv(da_results_score_fgz$output, "./deliverables/diff_abundance_score_adjusted_tmm_fgz.csv")
 DT::datatable(data.frame(da_results_score_fgz$output))
 
 ### volcanoplot
 p_score_fgz <- volcano_plot(
   da_results_score_fgz,
-  alpha = fdr_thresh_score_fgz, 
+  alpha = fdr_thresh_score_pgz, 
   color_scheme = COLOR_SCHEME, 
   title = "Differential taxa associated to ulcer score"
   )

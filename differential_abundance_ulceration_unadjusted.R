@@ -26,6 +26,7 @@ print(sum(raw_counts[, internal_controls]))
 raw_counts <- raw_counts[, !names(raw_counts) %in% internal_controls]
 metadata <- metadata[!rownames(metadata) %in% internal_controls, !names(metadata) %in% c("fastq_1", "fastq_2", "sample_type")]
 metadata$ulcer_score <- factor(metadata$ulcer_score, levels=c("2", "3", "4", "5"))
+metadata$group <- factor(metadata$group, levels=c("Meel", "Korrel"))
 metadata$stable <- as.factor(metadata$stable)
 dim(metadata)
 dim(raw_counts)
@@ -47,7 +48,7 @@ tse_object <- TreeSummarizedExperiment::TreeSummarizedExperiment(
   rowNodeLab = rownames(raw_counts)
 )
 
-## Run DA
+## Run DA against ulcer score
 res_score <- treeclimbR::runDA(
   TSE = tse_object,
   feature_on_row = TRUE,
@@ -201,5 +202,76 @@ dev.off()
 htmlwidgets::saveWidget(
   p_score,
   file = "./figures/DAA_ulceration_unadjusted_volcanoplot.html",
+  selfcontained=F
+  )
+
+
+
+## Run DA against feed type
+res_trt <- treeclimbR::runDA(
+  TSE = tse_object,
+  feature_on_row = TRUE,
+  assay = 1,
+  design_terms = "group"
+  )
+res_table_trt <- treeclimbR::nodeResult(
+  object = res_trt,
+  n = Inf
+  )
+candidates_trt <- treeclimbR::getCand(
+  tree = TreeSummarizedExperiment::rowTree(tse_object),
+  score_data = res_table_trt,
+  node_column = "node",
+  p_column = "PValue",
+  sign_column = "logFC"
+  )
+da_results_trt <- treeclimbR::evalCand(
+  tree = TreeSummarizedExperiment::rowTree(tse_object),
+  type = "single",
+  levels = candidates_trt$candidate_list,
+  limit_rej = 0.1,
+  score_data = res_table_trt,
+  node_column = "node",
+  p_column = "PValue",
+  sign_column = "logFC",
+  use_pseudo_leaf = FALSE
+  )
+
+da_results_trt$output$names <- TreeSummarizedExperiment::convertNode(
+  phylogenetic_tree,
+  da_results_trt$output$node
+  )
+
+
+## permutation-based FDR estimation
+fdr_thresh_trt <- permFDP::permFDP.adjust.threshold(
+  pVals = da_results_trt$output$PValue,
+  threshold = 0.05,
+  myDesign = ifelse(metadata[colnames(raw_counts), "group"] == "Meel", 1, 2),
+  intOnly = raw_counts[da_results_trt$output$names, ],
+  nPerms = 999
+)
+da_results_trt$output$passes_permFDP <- da_results_trt$output$PValue <= fdr_thresh_trt
+write.csv(da_results_trt$output, "./deliverables/diff_abundance_trt_unadjusted_tmm.csv")
+DT::datatable(data.frame(da_results_trt$output))
+
+p_trt <- volcano_plot(
+  da_results_trt,
+  alpha = fdr_thresh_trt,
+  color_scheme = COLOR_SCHEME,
+  title = "Differential taxa associated to pellet feed"
+  )
+
+png("./figures/DAA_treatment_unadjusted_volcanoplot.png", width=800, height=600, res=100)
+p_trt
+dev.off()
+
+svglite::svglite("./figures/DAA_treatment_unadjusted_volcanoplot.svg", width=8, height=6)
+p_trt
+dev.off()
+
+htmlwidgets::saveWidget(
+  p_trt,
+  file = "./figures/DAA_treatment_unadjusted_volcanoplot.html",
   selfcontained=F
   )
