@@ -94,6 +94,7 @@ boxplot_pgz <- ggplot2::ggplot(
     ggplot2::theme_bw() +
     ggplot2::coord_flip() +
     ggplot2::scale_color_manual(values=COLOR_SCHEME[1:2]) +
+    ggplot2::lims(size=c(0, 3000)) +
     ggplot2::labs(x="", y="Shannon diversity index")
 
 png("./figures/diversity_HS_PGZ_presence_boxplot.png", width=800, height=600, res=100)
@@ -116,6 +117,7 @@ boxplot_fgz <- ggplot2::ggplot(
     ggplot2::theme_bw() +
     ggplot2::coord_flip() +
     ggplot2::scale_color_manual(values=COLOR_SCHEME[1:2]) +
+    ggplot2::lims(size=c(0, 3000)) +
     ggplot2::labs(x="", y="Shannon diversity index")
 
 png("./figures/diversity_HS_FGZ_presence_boxplot.png", width=800, height=600, res=100)
