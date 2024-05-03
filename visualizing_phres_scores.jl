@@ -22,7 +22,7 @@ post_qc_df = CSV.read(post_qc, DataFrame, drop=[:Sample])
 plot()
 for i in 1:size(pre_qc_df, 1)
     phred_scores=Vector(pre_qc_df[i, :])
-    c = any(phred_scores .< 20) ? COLOR_SCHEME[4] : any(phred_scores .< 23) ? COLOR_SCHEME[2] : COLOR_SCHEME[1]
+    c = any(phred_scores .< 20) ? COLOR_SCHEME[4] : any(phred_scores .<= 24) ? COLOR_SCHEME[2] : COLOR_SCHEME[1]
     plot!(parse.(Int, names(pre_qc_df)), phred_scores, label="", color=c)
     current()
 end
@@ -34,7 +34,7 @@ savefig("./figures/phred_scrores_preQC.svg")
 plot()
 for i in 1:size(post_qc_df, 1)
     phred_scores=Vector(post_qc_df[i, :])
-    c = any(phred_scores .< 20) ? COLOR_SCHEME[4] : any(phred_scores .< 23) ? COLOR_SCHEME[2] : COLOR_SCHEME[1]
+    c = any(phred_scores .< 20) ? COLOR_SCHEME[4] : any(phred_scores .< 24) ? COLOR_SCHEME[2] : COLOR_SCHEME[1]
     plot!(parse.(Int, names(post_qc_df)), phred_scores, label="", color=c)
     current()
 end
