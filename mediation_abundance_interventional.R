@@ -1,3 +1,4 @@
+library(data.table)
 library(dplyr)
 library(sl3)
 library(doFuture)
@@ -74,10 +75,6 @@ extract_vars <- function(ps, gland_zone="PGZ", taxonomic_level="genus"){
     )
   W <- data.frame(phyloseq::sample_data(ps)) %>%
     select(all_of(covars))
-  if (impute){
-    W <- W %>%
-      mutate(across(everything(), impute_lowest))
-  }
   # take complete cases
   complete_cases <- complete.cases(A, Y, M, W)
   if (sum(complete_cases) != length(A)){
@@ -119,7 +116,64 @@ find_significant_effects <- function(mediation_results, top_n=NULL){
   significant_effects <- significant_effects %>%
     mutate(diff = abs(indirect - direct)) %>%
     arrange(desc(diff))
+  if (!is.null(top_n)){
+    significant_effects <- significant_effects %>%
+      slice(1:top_n)
+  }
   return(significant_effects)
+}
+
+plot_significant_effects <- function(mediation_results, color_scheme=COLOR_SCHEME, top_n=NULL, export_name=NULL){
+  significant_effects <- find_significant_effects(mediation_results, top_n=top_n)
+
+  # Melt the dataframe to long format
+  long_effects <- reshape2::melt(
+    significant_effects,
+    id.vars = "mediator",
+    measure.vars = c("indirect", "direct"),
+    variable.name = "effect_type",
+    value.name = "effect"
+  )
+  indirect_ci_data <- data.frame(
+    mediator = significant_effects$mediator,
+    effect_type = "indirect",
+    lower_ci = significant_effects$ci_indirect_low,
+    upper_ci = significant_effects$ci_indirect_high
+  )
+  direct_ci_data <- data.frame(
+    mediator = significant_effects$mediator,
+    effect_type = "direct",
+    lower_ci = significant_effects$ci_direct_low,
+    upper_ci = significant_effects$ci_direct_high
+  )
+  ci_data <- rbind(indirect_ci_data, direct_ci_data)
+  # merge the long effects dataframe with the confidence intervals dataframe
+  long_effects <- merge(long_effects, ci_data, by = c("mediator", "effect_type"))
+
+  # Create the plot
+  p <- ggplot2::ggplot(
+    long_effects,
+    ggplot2::aes(x = effect, y = reorder(mediator, abs(effect)), color = effect_type)
+    ) +
+    ggplot2::geom_point(position = ggplot2::position_dodge(width = 0.5)) +
+    ggplot2::geom_errorbar(
+      ggplot2::aes(xmin = lower_ci, xmax = upper_ci),
+      width = 0.2, position = ggplot2::position_dodge(width = 0.5)
+    ) +
+    ggplot2::geom_vline(xintercept = 0, linetype = "dashed") +
+    ggplot2::labs(
+      x = "Effect estimate",
+      y = "Mediator",
+      color = "Effect Type"
+      ) +
+    ggplot2::theme_minimal() +
+    ggplot2::scale_color_manual(
+      name = "",values = color_scheme[c(2, 1)]
+      )
+  if (!is.na(export_name)) {
+    ggplot2::ggsave(export_name, p)
+  }
+  return(p)
 }
 
 ## Mediation analysis PGZ
@@ -150,57 +204,10 @@ if (!file.exists("./deliverables/taxon_mediation_results_pgz.csv")){
   }
   write.csv(mediation_results_pgz, "./deliverables/taxon_mediation_results_pgz.csv")
 } else {
-  mediation_results_pgz <- read.csv("./deliverables/taxon_mediation_results_pgz.csv")
+  mediation_results_pgz <- read.csv("./deliverables/taxon_mediation_results_pgz.csv", row.names = 1, header=TRUE)
 }
-significant_effects_pgz <- find_significant_effects(mediation_results_pgz, top_n=25)
-
-# Melt the dataframe to long format
-long_effects <- reshape2::melt(
-  significant_effects_pgz,
-  id.vars = "mediator",
-  measure.vars = c("indirect", "direct"),
-  variable.name = "effect_type",
-  value.name = "effect"
-)
-indirect_ci_data <- data.frame(
-  mediator = significant_effects_pgz$mediator,
-  effect_type = "indirect",
-  lower_ci = significant_effects_pgz$ci_indirect_low,
-  upper_ci = significant_effects_pgz$ci_indirect_high
-)
-direct_ci_data <- data.frame(
-  mediator = significant_effects_pgz$mediator,
-  effect_type = "direct",
-  lower_ci = significant_effects_pgz$ci_direct_low,
-  upper_ci = significant_effects_pgz$ci_direct_high
-)
-ci_data <- rbind(indirect_ci_data, direct_ci_data)
-# merge the long effects dataframe with the confidence intervals dataframe
-long_effects <- merge(long_effects, ci_data, by = c("mediator", "effect_type"))
-
-# Create the plot
-p <- ggplot2::ggplot(
-  long_effects,
-  ggplot2::aes(x = effect, y = mediator, color = effect_type)
-  ) +
-  ggplot2::geom_point(position = ggplot2::position_dodge(width = 0.5)) +
-  ggplot2::geom_errorbar(
-    ggplot2::aes(xmin = lower_ci, xmax = upper_ci),
-    width = 0.2, position = ggplot2::position_dodge(width = 0.5)
-  ) +
-  ggplot2::geom_vline(xintercept = 0, linetype = "dashed") +
-  ggplot2::labs(
-    x = "Effect estimate",
-    y = "Mediator",
-    color = "Effect Type"
-    ) +
-  ggplot2::theme_minimal() +
-  ggplot2::scale_color_manual(
-    name = "",values = COLOR_SCHEME[c(2, 1)]
-    )
-ggplot2::ggsave("./deliverables/mediation_effects_pgz.svg", p)
-plotly::ggplotly(p)
-
+p_pgz <- plot_significant_effects(mediation_results_pgz, top_n=20, export_name="./deliverables/mediation_effects_pgz.svg")
+plotly::ggplotly(p_pgz)
 
 ## Mediation analysis FGZ
 # check if the taxon_mediation_results_fgz.csv file exists
@@ -228,53 +235,8 @@ if (!file.exists("./deliverables/taxon_mediation_results_fgz.csv")){
   }
   write.csv(mediation_results_fgz, "./deliverables/taxon_mediation_results_fgz.csv")
 } else {
-  mediation_results_fgz <- read.csv("./deliverables/taxon_mediation_results_fgz.csv")
+  mediation_results_fgz <- read.csv("./deliverables/taxon_mediation_results_fgz.csv", row.names = 1, header=TRUE)
 }
-significant_effects_fgz <- find_significant_effects(mediation_results_fgz, top_n=25)
 
-# Melt the dataframe to long format
-long_effects <- reshape2::melt(
-  significant_effects_fgz,
-  id.vars = "mediator",
-  measure.vars = c("indirect", "direct"),
-  variable.name = "effect_type",
-  value.name = "effect"
-)
-indirect_ci_data <- data.frame(
-  mediator = significant_effects_fgz$mediator,
-  effect_type = "indirect",
-  lower_ci = significant_effects_fgz$ci_indirect_low,
-  upper_ci = significant_effects_fgz$ci_indirect_high
-)
-direct_ci_data <- data.frame(
-  mediator = significant_effects_fgz$mediator,
-  effect_type = "direct",
-  lower_ci = significant_effects_fgz$ci_direct_low,
-  upper_ci = significant_effects_fgz$ci_direct_high
-)
-ci_data <- rbind(indirect_ci_data, direct_ci_data)
-# merge the long effects dataframe with the confidence intervals dataframe
-long_effects <- merge(long_effects, ci_data, by = c("mediator", "effect_type"))
-
-# Create the plot
-p <- ggplot2::ggplot(
-  long_effects,
-  ggplot2::aes(x = effect, y = mediator, color = effect_type)
-  ) +
-  ggplot2::geom_point(position = ggplot2::position_dodge(width = 0.5)) +
-  ggplot2::geom_errorbar(
-    ggplot2::aes(xmin = lower_ci, xmax = upper_ci),
-    width = 0.2, position = ggplot2::position_dodge(width = 0.5)
-  ) +
-  ggplot2::geom_vline(xintercept = 0, linetype = "dashed") +
-  ggplot2::labs(
-    x = "Effect estimate",
-    y = "Mediator",
-    color = "Effect Type"
-    ) +
-  ggplot2::theme_minimal() +
-  ggplot2::scale_color_manual(
-    name = "",values = COLOR_SCHEME[c(2, 1)]
-    )
-ggplot2::ggsave("./deliverables/mediation_effects_fgz.svg", p)
-plotly::ggplotly(p)
+p_fgz <- plot_significant_effects(mediation_results_fgz, top_n=15, export_name="./deliverables/mediation_effects_fgz.svg")
+plotly::ggplotly(p_fgz)
