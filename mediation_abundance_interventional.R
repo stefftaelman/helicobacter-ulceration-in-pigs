@@ -1,6 +1,7 @@
 library(dplyr)
 library(sl3)
 library(doFuture)
+library(ranger)
 set.seed(42)
 
 COLOR_SCHEME <- c(
@@ -44,26 +45,12 @@ metadata <- metadata %>%
 dim(metadata)
 dim(raw_counts)
 
-# read in DAA taxa
-# daa_taxa_pgz <- read.csv("./deliverables/diff_abundance_score_adjusted_tmm_pgz.csv", row.names = 1)
-# key_taxa_pgz <- daa_taxa_pgz[daa_taxa_pgz$passes_permFDP == TRUE, ]$names
-# daa_taxa_fgz <- read.csv("./deliverables/diff_abundance_score_adjusted_tmm_fgz.csv", row.names = 1)
-# key_taxa_fgz <- daa_taxa_fgz[daa_taxa_fgz$passes_permFDP == TRUE, ]$names
-# key_taxa_names <- intersect(key_taxa_pgz, key_taxa_fgz)
-# key_taxa_IDs <- row.names(taxonomy[taxonomy[, ncol(taxonomy)] %in% key_taxa_names, ])
-# enriched_taxa_names <- daa_taxa_pgz[(daa_taxa_pgz$logFC >= 2 & daa_taxa_pgz$names %in% key_taxa_names), ]$names
-# enriched_taxa_IDs <- names(which(taxonomy[, ncol(taxonomy)] == enriched_taxa_names[1]))
-# diminished_taxa_names <- daa_taxa_pgz[(daa_taxa_pgz$logFC <= -2 & daa_taxa_pgz$names %in% key_taxa_names), ]$names
-# diminished_taxa_IDs <- row.names(taxonomy[taxonomy[, ncol(taxonomy)] %in% diminished_taxa_names, ])
-
-
 ps <- phyloseq::phyloseq(
   phyloseq::otu_table(raw_counts, taxa_are_rows=TRUE),
   phyloseq::sample_data(metadata),
   phyloseq::tax_table(taxonomy)
   )
 
-## Mediation analysis PGZ
 extract_vars <- function(ps, gland_zone="PGZ", taxonomic_level="genus"){
   stopifnot(taxonomic_level %in% phyloseq::rank_names(ps))
   stopifnot(gland_zone %in% c("PGZ", "FGZ"))
@@ -121,45 +108,173 @@ extract_vars <- function(ps, gland_zone="PGZ", taxonomic_level="genus"){
   )
 }
 
-#sl_library <- c("SL.glm","SL.step","SL.glm.interaction","SL.randomForest","SL.mean")
-sl_library <- c("SL.glm","SL.mean")
-vars_pgz <- extract_vars(ps, gland_zone="PGZ", taxonomic_level="genus")
-
-mediation_results_pgz <- data.frame()
-for (i in seq_along(vars_pgz$mediator_names)){
-  ans <- HDmediation::mediation(
-    data = vars_pgz$df,
-    A = "A", W = vars_pgz$covariate_names,
-    Z = vars_pgz$mediator_names[-i],
-    M = vars_pgz$mediator_names[i],
-    Y = "Y", S = NULL,
-    family = "gaussian", folds = 1, partial_tmle = TRUE, bounds = NULL,
-    learners_g = sl_library, learners_e = sl_library, learners_c = sl_library,
-    learners_b = sl_library, learners_hz = sl_library, learners_u = sl_library,
-    learners_ubar = sl_library, learners_v = sl_library, learners_vbar = sl_library
-  )
-  ans$mediator <- vars_pgz$mediator_names[i]
-  mediation_results_pgz <- rbind(mediation_results_pgz, ans)
+find_significant_effects <- function(mediation_results, top_n=NULL){
+  # look for mediators that have confidence intervals (for either indirect or for direct) that do not include zero
+  significant_effects <- mediation_results %>%
+    filter(
+      (0 %between% list(ci_indirect_low, ci_indirect_high)) == FALSE #|
+      #  (0 %between% list(ci_direct_low, ci_direct_high)) == FALSE
+      )
+  # sort by the biggest difference between indirect and direct effect
+  significant_effects <- significant_effects %>%
+    mutate(diff = abs(indirect - direct)) %>%
+    arrange(desc(diff))
+  return(significant_effects)
 }
-write.csv(mediation_results_pgz, "./deliverables/taxon_mediation_results_pgz.csv")
+
+## Mediation analysis PGZ
+
+# check if the taxon_mediation_results_pgz.csv file exists
+if (!file.exists("./deliverables/taxon_mediation_results_pgz.csv")){
+  sl_library <- c("SL.glm","SL.mean", "SL.ranger")
+  vars_pgz <- extract_vars(ps, gland_zone="PGZ", taxonomic_level="genus")
+
+  mediation_results_pgz <- data.frame()
+  for (i in seq_along(vars_pgz$mediator_names)){
+    cat(paste0(round(i/length(vars_pgz$mediator_names) * 100), '% completed'))
+    ans <- HDmediation::mediation(
+      data = vars_pgz$df,
+      A = "A", W = vars_pgz$covariate_names,
+      Z = vars_pgz$mediator_names[-i],
+      M = vars_pgz$mediator_names[i],
+      Y = "Y", S = NULL,
+      family = "binomial", folds = 2, partial_tmle = TRUE, bounds = NULL,
+      learners_g = sl_library, learners_e = sl_library, learners_c = sl_library,
+      learners_b = sl_library, learners_hz = sl_library, learners_u = sl_library,
+      learners_ubar = sl_library, learners_v = sl_library, learners_vbar = sl_library
+    )
+    ans$mediator <- vars_pgz$mediator_names[i]
+    mediation_results_pgz <- rbind(mediation_results_pgz, ans)
+    if (i == length(vars_pgz$mediator_names)) cat(': Done')
+    else cat('\014')
+  }
+  write.csv(mediation_results_pgz, "./deliverables/taxon_mediation_results_pgz.csv")
+} else {
+  mediation_results_pgz <- read.csv("./deliverables/taxon_mediation_results_pgz.csv")
+}
+significant_effects_pgz <- find_significant_effects(mediation_results_pgz, top_n=25)
+
+# Melt the dataframe to long format
+long_effects <- reshape2::melt(
+  significant_effects_pgz,
+  id.vars = "mediator",
+  measure.vars = c("indirect", "direct"),
+  variable.name = "effect_type",
+  value.name = "effect"
+)
+indirect_ci_data <- data.frame(
+  mediator = significant_effects_pgz$mediator,
+  effect_type = "indirect",
+  lower_ci = significant_effects_pgz$ci_indirect_low,
+  upper_ci = significant_effects_pgz$ci_indirect_high
+)
+direct_ci_data <- data.frame(
+  mediator = significant_effects_pgz$mediator,
+  effect_type = "direct",
+  lower_ci = significant_effects_pgz$ci_direct_low,
+  upper_ci = significant_effects_pgz$ci_direct_high
+)
+ci_data <- rbind(indirect_ci_data, direct_ci_data)
+# merge the long effects dataframe with the confidence intervals dataframe
+long_effects <- merge(long_effects, ci_data, by = c("mediator", "effect_type"))
+
+# Create the plot
+p <- ggplot2::ggplot(
+  long_effects,
+  ggplot2::aes(x = effect, y = mediator, color = effect_type)
+  ) +
+  ggplot2::geom_point(position = ggplot2::position_dodge(width = 0.5)) +
+  ggplot2::geom_errorbar(
+    ggplot2::aes(xmin = lower_ci, xmax = upper_ci),
+    width = 0.2, position = ggplot2::position_dodge(width = 0.5)
+  ) +
+  ggplot2::geom_vline(xintercept = 0, linetype = "dashed") +
+  ggplot2::labs(
+    x = "Effect estimate",
+    y = "Mediator",
+    color = "Effect Type"
+    ) +
+  ggplot2::theme_minimal() +
+  ggplot2::scale_color_manual(
+    name = "",values = COLOR_SCHEME[c(2, 1)]
+    )
+ggplot2::ggsave("./deliverables/mediation_effects_pgz.svg", p)
+plotly::ggplotly(p)
+
 
 ## Mediation analysis FGZ
-vars_fgz <- extract_vars(ps, gland_zone="FGZ", taxonomic_level="genus")
+# check if the taxon_mediation_results_fgz.csv file exists
+if (!file.exists("./deliverables/taxon_mediation_results_fgz.csv")){
+  vars_fgz <- extract_vars(ps, gland_zone="FGZ", taxonomic_level="genus")
 
-mediation_results_fgz <- data.frame()
-for (i in seq_along(vars_fgz$mediator_names)){
-  ans <- HDmediation::mediation(
-    data = vars_fgz$df,
-    A = "A", W = vars_fgz$covariate_names,
-    Z = vars_fgz$mediator_names[-i],
-    M = vars_fgz$mediator_names[i],
-    Y = "Y", S = NULL,
-    family = "gaussian", folds = 1, partial_tmle = TRUE, bounds = NULL,
-    learners_g = sl_library, learners_e = sl_library, learners_c = sl_library,
-    learners_b = sl_library, learners_hz = sl_library, learners_u = sl_library,
-    learners_ubar = sl_library, learners_v = sl_library, learners_vbar = sl_library
-  )
-  ans$mediator <- vars_fgz$mediator_names[i]
-  mediation_results_fgz <- rbind(mediation_results_fgz, ans)
+  mediation_results_fgz <- data.frame()
+  for (i in seq_along(vars_fgz$mediator_names)){
+    cat(paste0(round(i/length(vars_fgz$mediator_names) * 100), '% completed'))
+    ans <- HDmediation::mediation(
+      data = vars_fgz$df,
+      A = "A", W = vars_fgz$covariate_names,
+      Z = vars_fgz$mediator_names[-i],
+      M = vars_fgz$mediator_names[i],
+      Y = "Y", S = NULL,
+      family = "binomial", folds = 1, partial_tmle = TRUE, bounds = NULL,
+      learners_g = sl_library, learners_e = sl_library, learners_c = sl_library,
+      learners_b = sl_library, learners_hz = sl_library, learners_u = sl_library,
+      learners_ubar = sl_library, learners_v = sl_library, learners_vbar = sl_library
+    )
+    ans$mediator <- vars_fgz$mediator_names[i]
+    mediation_results_fgz <- rbind(mediation_results_fgz, ans)
+    if (i == length(vars_fgz$mediator_names)) cat(': Done')
+    else cat('\014')
+  }
+  write.csv(mediation_results_fgz, "./deliverables/taxon_mediation_results_fgz.csv")
+} else {
+  mediation_results_fgz <- read.csv("./deliverables/taxon_mediation_results_fgz.csv")
 }
-write.csv(mediation_results_fgz, "./deliverables/taxon_mediation_results_fgz.csv")
+significant_effects_fgz <- find_significant_effects(mediation_results_fgz, top_n=25)
+
+# Melt the dataframe to long format
+long_effects <- reshape2::melt(
+  significant_effects_fgz,
+  id.vars = "mediator",
+  measure.vars = c("indirect", "direct"),
+  variable.name = "effect_type",
+  value.name = "effect"
+)
+indirect_ci_data <- data.frame(
+  mediator = significant_effects_fgz$mediator,
+  effect_type = "indirect",
+  lower_ci = significant_effects_fgz$ci_indirect_low,
+  upper_ci = significant_effects_fgz$ci_indirect_high
+)
+direct_ci_data <- data.frame(
+  mediator = significant_effects_fgz$mediator,
+  effect_type = "direct",
+  lower_ci = significant_effects_fgz$ci_direct_low,
+  upper_ci = significant_effects_fgz$ci_direct_high
+)
+ci_data <- rbind(indirect_ci_data, direct_ci_data)
+# merge the long effects dataframe with the confidence intervals dataframe
+long_effects <- merge(long_effects, ci_data, by = c("mediator", "effect_type"))
+
+# Create the plot
+p <- ggplot2::ggplot(
+  long_effects,
+  ggplot2::aes(x = effect, y = mediator, color = effect_type)
+  ) +
+  ggplot2::geom_point(position = ggplot2::position_dodge(width = 0.5)) +
+  ggplot2::geom_errorbar(
+    ggplot2::aes(xmin = lower_ci, xmax = upper_ci),
+    width = 0.2, position = ggplot2::position_dodge(width = 0.5)
+  ) +
+  ggplot2::geom_vline(xintercept = 0, linetype = "dashed") +
+  ggplot2::labs(
+    x = "Effect estimate",
+    y = "Mediator",
+    color = "Effect Type"
+    ) +
+  ggplot2::theme_minimal() +
+  ggplot2::scale_color_manual(
+    name = "",values = COLOR_SCHEME[c(2, 1)]
+    )
+ggplot2::ggsave("./deliverables/mediation_effects_fgz.svg", p)
+plotly::ggplotly(p)
